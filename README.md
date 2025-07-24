@@ -2,7 +2,7 @@
 
 ### Disclaimer: This is an unaudited project made for skill demonstration purposes, DO NOT DEPLOY IT MAINNET.
 
-# Foundry Decentralised Lottery using Chainlink VRF and Automation
+# Foundry Decentralized Lottery using Chainlink VRF and Automation
 
 # Getting Started
 
