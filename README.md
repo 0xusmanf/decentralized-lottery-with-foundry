@@ -1,6 +1,8 @@
 <!-- @format -->
 
-# Foundry Smart Contract Lottery
+### Disclaimer: This is an unaudited project made for skill demonstration purposes, DO NOT DEPLOY IT MAINNET.
+
+# Foundry Decentralised Lottery using Chainlink VRF and Automation
 
 # Getting Started
 
@@ -14,8 +16,8 @@
 ## Quickstart
 
 ```
-git clone https://github.com/Cyfrin/foundry-smart-contract-lottery-f23
-cd foundry-smart-contract-lottery-f23
+git clone https://github.com/0xusmanf/decentralized-lottery-with-foundry
+cd decentralized-lottery-with-foundry
 forge build
 ```
 
@@ -38,7 +40,7 @@ make anvil
 If you're having a hard time installing the chainlink library, you can optionally run this command. 
 
 ```
-forge install smartcontractkit/chainlink-brownie-contracts@0.6.1 --no-commit
+forge install smartcontractkit/chainlink-brownie-contracts@0.6.1
 ```
 
 ## Deploy
@@ -54,15 +56,6 @@ make deploy
 [See below](#deployment-to-a-testnet-or-mainnet)
 
 ## Testing
-
-We talk about 4 test tiers in the video.
-
-1. Unit
-2. Integration
-3. Forked
-4. Staging
-
-This repo we cover #1 and #3.
 
 ```
 forge test
@@ -80,7 +73,7 @@ forge test --fork-url $SEPOLIA_RPC_URL
 forge coverage
 ```
 
-# Deployment to a testnet or mainnet
+# Deployment to a testnet
 
 1. Setup environment variables
 
@@ -108,9 +101,7 @@ This will setup a ChainlinkVRF Subscription for you. If you already have one, up
 
 [You can follow the documentation if you get lost.](https://docs.chain.link/chainlink-automation/compatible-contracts)
 
-Go to [automation.chain.link](https://automation.chain.link/new) and register a new upkeep. Choose `Custom logic` as your trigger mechanism for automation. Your UI will look something like this once completed:
-
-![Automation](./img/keepers.png)
+Go to [automation.chain.link](https://automation.chain.link/new) and register a new upkeep. Choose `Custom logic` as your trigger mechanism for automation.
 
 ## Scripts
 
