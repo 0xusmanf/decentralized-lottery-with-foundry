@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 import {DeployRaffle} from "../../script/DeployRaffle.s.sol";
 import {Raffle} from "../../src/Raffle.sol";
@@ -23,7 +23,8 @@ contract RaffleTest is StdCheats, Test {
     uint64 subscriptionId;
     bytes32 gasLane;
     uint256 automationUpdateInterval;
-    uint256 raffleEntranceFee;
+    uint256 raffleEntranceFee = 3e16;
+    uint256 minimumEntracneFee;
     uint32 callbackGasLimit;
     address vrfCoordinatorV2;
 
@@ -39,12 +40,12 @@ contract RaffleTest is StdCheats, Test {
             ,
             gasLane,
             automationUpdateInterval,
-            raffleEntranceFee,
+            minimumEntracneFee,
             callbackGasLimit,
             vrfCoordinatorV2, // link
             // deployerKey
             ,
-
+            ,
         ) = helperConfig.activeNetworkConfig();
     }
 
@@ -71,44 +72,26 @@ contract RaffleTest is StdCheats, Test {
         }
     }
 
-    function testFulfillRandomWordsCanOnlyBeCalledAfterPerformUpkeep()
-        public
-        raffleEntered
-        onlyOnDeployedContracts
-    {
+    function testFulfillRandomWordsCanOnlyBeCalledAfterPerformUpkeep() public raffleEntered onlyOnDeployedContracts {
         // Arrange
         // Act / Assert
         vm.expectRevert("nonexistent request");
         // vm.mockCall could be used here...
-        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(
-            0,
-            address(raffle)
-        );
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(0, address(raffle));
 
         vm.expectRevert("nonexistent request");
 
-        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(
-            1,
-            address(raffle)
-        );
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(1, address(raffle));
     }
 
-    function testFulfillRandomWordsPicksAWinnerResetsAndSendsMoney()
-        public
-        raffleEntered
-        onlyOnDeployedContracts
-    {
+    function testFulfillRandomWordsPicksAWinnerResetsAndSendsMoney() public raffleEntered onlyOnDeployedContracts {
         address expectedWinner = address(1);
 
         // Arrange
         uint256 additionalEntrances = 3;
         uint256 startingIndex = 1; // We have starting index be 1 so we can start with address(1) and not address(0)
 
-        for (
-            uint256 i = startingIndex;
-            i < startingIndex + additionalEntrances;
-            i++
-        ) {
+        for (uint256 i = startingIndex; i < startingIndex + additionalEntrances; i++) {
             address player = address(uint160(i));
             hoax(player, 1 ether); // deal 1 eth to the player
             raffle.enterRaffle{value: raffleEntranceFee}();
@@ -123,10 +106,7 @@ contract RaffleTest is StdCheats, Test {
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bytes32 requestId = entries[1].topics[1]; // get the requestId from the logs
 
-        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(
-            uint256(requestId),
-            address(raffle)
-        );
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(requestId), address(raffle));
 
         // Assert
         address recentWinner = raffle.getRecentWinner();

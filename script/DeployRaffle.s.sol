@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity 0.8.19;
 
 import {Script} from "forge-std/Script.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
@@ -18,23 +18,16 @@ contract DeployRaffle is Script {
             uint32 callbackGasLimit,
             address vrfCoordinatorV2,
             address link,
-            uint256 deployerKey
+            uint256 deployerKey,
+            address priceFeed
         ) = helperConfig.activeNetworkConfig();
 
         if (subscriptionId == 0) {
             CreateSubscription createSubscription = new CreateSubscription();
-            subscriptionId = createSubscription.createSubscription(
-                vrfCoordinatorV2,
-                deployerKey
-            );
+            subscriptionId = createSubscription.createSubscription(vrfCoordinatorV2, deployerKey);
 
             FundSubscription fundSubscription = new FundSubscription();
-            fundSubscription.fundSubscription(
-                vrfCoordinatorV2,
-                subscriptionId,
-                link,
-                deployerKey
-            );
+            fundSubscription.fundSubscription(vrfCoordinatorV2, subscriptionId, link, deployerKey);
         }
 
         vm.startBroadcast(deployerKey);
@@ -44,17 +37,13 @@ contract DeployRaffle is Script {
             automationUpdateInterval,
             raffleEntranceFee,
             callbackGasLimit,
-            vrfCoordinatorV2
+            vrfCoordinatorV2,
+            priceFeed
         );
         vm.stopBroadcast();
 
         // We already have a broadcast in here
-        addConsumer.addConsumer(
-            address(raffle),
-            vrfCoordinatorV2,
-            subscriptionId,
-            deployerKey
-        );
+        addConsumer.addConsumer(address(raffle), vrfCoordinatorV2, subscriptionId, deployerKey);
         return (raffle, helperConfig);
     }
 }
