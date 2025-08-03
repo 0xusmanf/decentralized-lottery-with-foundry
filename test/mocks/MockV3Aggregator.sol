@@ -26,6 +26,11 @@ contract MockV3Aggregator {
         updateAnswer(_initialAnswer);
     }
 
+    /**
+     * @dev This is added to exclude this contract from coverage.
+     */
+    function testExclude() public {}
+
     function updateAnswer(int256 _answer) public {
         latestAnswer = _answer;
         latestTimestamp = block.timestamp;
@@ -35,7 +40,7 @@ contract MockV3Aggregator {
         getStartedAt[latestRound] = block.timestamp;
     }
 
-    function updateRoundData(uint80 _roundId, int256 _answer, uint256 _timestamp, uint256 _startedAt) public {
+    /*function updateRoundData(uint80 _roundId, int256 _answer, uint256 _timestamp, uint256 _startedAt) public {
         latestRound = _roundId;
         latestAnswer = _answer;
         latestTimestamp = _timestamp;
@@ -50,7 +55,7 @@ contract MockV3Aggregator {
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
         return (_roundId, getAnswer[_roundId], getStartedAt[_roundId], getTimestamp[_roundId], _roundId);
-    }
+    }*/
 
     function latestRoundData()
         external
@@ -66,7 +71,7 @@ contract MockV3Aggregator {
         );
     }
 
-    function description() external pure returns (string memory) {
+    /*function description() external pure returns (string memory) {
         return "v0.6/tests/MockV3Aggregator.sol";
-    }
+    }*/
 }

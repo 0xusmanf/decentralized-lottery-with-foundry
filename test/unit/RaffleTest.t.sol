@@ -10,9 +10,14 @@ import {Vm} from "forge-std/Vm.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
 import {VRFCoordinatorV2Mock} from "../mocks/VRFCoordinatorV2Mock.sol";
 import {CreateSubscription} from "../../script/Interactions.s.sol";
+import {LibString} from "@solmate/utils/LibString.sol";
+import {MockV3Aggregator} from "../mocks//MockV3Aggregator.sol";
 
-contract RaffleTest is StdCheats, Test {
+contract PlayerIsAContract {}
+
+contract RaffleUnitTest is StdCheats, Test {
     /* Events */
+    event RandomWordsFulfilled(uint256 indexed requestId, uint256 outputSeed, uint96 payment, bool indexed success);
     event RequestedRaffleWinner(uint256 indexed requestId);
     event RaffleEntered(address indexed player);
     event WinnerPicked(address indexed player);
@@ -31,14 +36,19 @@ contract RaffleTest is StdCheats, Test {
 
     address public PLAYER = makeAddr("player");
     uint256 public constant STARTING_USER_BALANCE = 10 ether;
+    uint256 public constant NUMBER_OF_PLAYERS = 10;
+    address[NUMBER_OF_PLAYERS] public PLAYERS;
+    uint256 public constant PRECISION = 1e18;
+
+    PlayerIsAContract public playerIsAContract = new PlayerIsAContract();
 
     function setUp() external {
         DeployRaffle deployer = new DeployRaffle();
-        (raffle, helperConfig) = deployer.run();
+        (raffle, helperConfig, subscriptionId) = deployer.run();
         vm.deal(PLAYER, STARTING_USER_BALANCE);
 
         (
-            subscriptionId,
+            ,
             gasLane,
             automationUpdateInterval,
             minimumEntracneFee,
@@ -59,7 +69,19 @@ contract RaffleTest is StdCheats, Test {
     // enterRaffle         //
     /////////////////////////
 
-    function testRaffleRevertsWHenYouDontPayEnought() public {
+    modifier enterRaffleWithMultiplePlayers() {
+        for (uint256 i = 0; i < PLAYERS.length; i++) {
+            string memory userName = string(abi.encodePacked("player", LibString.toString(i)));
+            PLAYERS[i] = makeAddr(userName);
+            vm.deal(PLAYERS[i], STARTING_USER_BALANCE);
+            vm.prank(PLAYERS[i]);
+            raffle.enterRaffle{value: raffleEntranceFee}();
+        }
+
+        _;
+    }
+
+    function testRaffleRevertsWhenYouDontPayEnough() public {
         // Arrange
         vm.prank(PLAYER);
         // Act / Assert
@@ -110,6 +132,18 @@ contract RaffleTest is StdCheats, Test {
         vm.expectRevert(Raffle.Raffle__PlayerAlreadyEntered.selector);
         vm.prank(PLAYER);
         raffle.enterRaffle{value: raffleEntranceFee}();
+    }
+
+    /*function testGetUsdAmountFromEth() public view {
+        (, int256 price,,,) = MockV3Aggregator(priceFeed).latestRoundData();
+        uint256 valueInUsd = raffleEntranceFee * uint256(price) / PRECISION;
+        assert(raffle.getUsdAmountFromEth(raffleEntranceFee) == valueInUsd);
+    }*/
+
+    function testGetMinimumEthAmountToEnter() public view {
+        (, int256 price,,,) = MockV3Aggregator(priceFeed).latestRoundData();
+        uint256 EthAmount = minimumEntracneFee * PRECISION / uint256(price);
+        assert(raffle.getMinimumEthAmountToEnter() == EthAmount);
     }
 
     /////////////////////////
@@ -213,7 +247,6 @@ contract RaffleTest is StdCheats, Test {
 
         // Assert
         Raffle.RaffleState raffleState = raffle.getRaffleState();
-        // requestId = raffle.getLastRequestId();
         assert(uint256(requestId) > 0);
         assert(uint256(raffleState) == 1); // 0 = open, 1 = calculating
     }
@@ -286,6 +319,26 @@ contract RaffleTest is StdCheats, Test {
         assert(endingTimeStamp > startingTimeStamp);
     }
 
+    function testFulfillRandomWordsRevertsIfTansferFails() public skipFork {
+        // Arrange
+        vm.deal(address(playerIsAContract), STARTING_USER_BALANCE);
+        vm.prank(address(playerIsAContract));
+        raffle.enterRaffle{value: raffleEntranceFee}();
+        vm.warp(block.timestamp + automationUpdateInterval + 1);
+        vm.roll(block.number + 1);
+
+        // Act
+        vm.recordLogs();
+        raffle.performUpkeep(""); // emits requestId
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 requestId = entries[1].topics[1]; // get the requestId from the logs
+
+        // Assert
+        vm.expectEmit(true, true, false, false);
+        emit RandomWordsFulfilled(1, 0, 0, false);
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(requestId), address(raffle));
+    }
+
     ///////////////////////
     // getter functions //
     //////////////////////
@@ -294,28 +347,16 @@ contract RaffleTest is StdCheats, Test {
         assert(raffle.getEntranceFee() == minimumEntracneFee);
     }
 
-    function testGetNumberOfPlayers() public view {
-        assert(raffle.getNumberOfPlayers() == 0);
+    function testGetNumberOfPlayers() public enterRaffleWithMultiplePlayers {
+        assert(raffle.getNumberOfPlayers() == NUMBER_OF_PLAYERS);
     }
 
-    function testGetTotalEthValue() public view {
-        assert(raffle.getTotalEthValue() == 0);
+    function testGetTotalEthValue() public enterRaffleWithMultiplePlayers {
+        assert(raffle.getTotalEthValue() == raffleEntranceFee * NUMBER_OF_PLAYERS);
     }
 
     function testGetInterval() public view {
         assert(raffle.getInterval() == automationUpdateInterval);
-    }
-
-    function testGetLastTimeStamp() public view {
-        assert(raffle.getLastTimeStamp() == block.timestamp);
-    }
-
-    function testGetRecentWinner() public view {
-        assert(raffle.getRecentWinner() == address(0));
-    }
-
-    function testGetRaffleState() public view {
-        assert(uint256(raffle.getRaffleState()) == 0);
     }
 
     function testGetPriceFeedAddress() public view {
@@ -326,15 +367,40 @@ contract RaffleTest is StdCheats, Test {
         assert(raffle.getCallbackGasLimit() == callbackGasLimit);
     }
 
-    /*function testGetSubscriptionId() public view {
-        assert(raffle.getSubscriptionId() == subscriptionId);
-    }*/
-
     function testGetVrfCoordinatorV2() public view {
         assert(raffle.getVrfCoordinatorV2() == vrfCoordinatorV2);
     }
 
     function testGetGasLane() public view {
         assert(raffle.getGasLane() == gasLane);
+    }
+
+    function testGetNumWords() public view {
+        assert(raffle.getNumWords() == 1);
+    }
+
+    function testGetRequestConfirmation() public view {
+        assert(raffle.getRequestConfirmations() == 3);
+    }
+
+    function testGetPrecision() public view {
+        assert(raffle.getPrecision() == PRECISION);
+    }
+
+    function testGetCurrentRoundId() public enterRaffleWithMultiplePlayers {
+        assert(raffle.getCurrentRoundId() == 1);
+    }
+
+    function testGetIsEntered() public {
+        // arrange
+        vm.prank(PLAYER);
+        raffle.enterRaffle{value: raffleEntranceFee}();
+
+        // act / assert
+        assert(raffle.getIsEntered(PLAYER) == true);
+    }
+
+    function testGetSubscriptionId() public view {
+        assert(raffle.getSubscriptionId() == subscriptionId);
     }
 }

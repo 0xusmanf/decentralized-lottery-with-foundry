@@ -43,14 +43,14 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 
     // Lottery Variables
     uint256 private immutable i_interval;
-    uint256 private immutable i_entranceFee;
+    uint256 private immutable i_minimumEntranceFeeInUSD;
     uint256 private s_lastTimeStamp;
     address private s_recentWinner;
     address payable[] private s_players;
     RaffleState private s_raffleState;
     uint256 private s_totalEthValue;
     uint256 private s_currentRoundId;
-    mapping(address => uint256) private s_isEntered;
+    mapping(address => uint256) private s_hasEntered;
 
     /* Events */
     event RequestedRaffleWinner(uint256 indexed requestId);
@@ -62,7 +62,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         uint64 subscriptionId,
         bytes32 gasLane, // keyHash
         uint256 interval,
-        uint256 entranceFee, // Should be in USD with 8 decimals
+        uint256 minimumEntranceFeeInUSD, // Should be in USD with 8 decimals
         uint32 callbackGasLimit,
         address vrfCoordinatorV2,
         address priceFeed
@@ -72,7 +72,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         i_gasLane = gasLane;
         i_interval = interval;
         i_subscriptionId = subscriptionId;
-        i_entranceFee = entranceFee;
+        i_minimumEntranceFeeInUSD = minimumEntranceFeeInUSD; // has 8 decimals
         s_raffleState = RaffleState.OPEN;
         s_lastTimeStamp = block.timestamp;
         i_callbackGasLimit = callbackGasLimit;
@@ -83,18 +83,18 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
      * @dev This is the function users will call with Eth to enter the raffle
      */
     function enterRaffle() external payable {
-        if (getUsdAmountFromEth(msg.value) < i_entranceFee) {
+        if (msg.value < getMinimumEthAmountToEnter()) {
             revert Raffle__SendMoreToEnterRaffle();
         }
         if (s_raffleState != RaffleState.OPEN) {
             revert Raffle__RaffleNotOpen();
         }
-        if (s_isEntered[msg.sender] == s_currentRoundId) {
+        if (s_hasEntered[msg.sender] == s_currentRoundId) {
             revert Raffle__PlayerAlreadyEntered();
         }
 
         // Implement a fee feature
-        s_isEntered[msg.sender]++;
+        s_hasEntered[msg.sender] = s_currentRoundId;
         s_players.push(payable(msg.sender));
         s_totalEthValue += msg.value;
         emit RaffleEntered(msg.sender);
@@ -122,9 +122,19 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
      * @param valueInEth is the Eth value
      * @return valueInUsd returns USD value of Eth, USD value has 8 decimals.
      */
-    function getUsdAmountFromEth(uint256 valueInEth) public view returns (uint256 valueInUsd) {
+    /*function getUsdAmountFromEth(uint256 valueInEth) public view returns (uint256 valueInUsd) {
         (, int256 price,,,) = i_priceFeed.latestRoundData();
         valueInUsd = valueInEth * uint256(price) / PRECISION;
+    }*/
+
+    /**
+     * @notice This is the function that will use
+     * Chainlink price feed to convert i_minimumEntranceFeeInUSD from usd to its Eth value
+     * @return ethAmount returns ETH value of i_minimumEntranceFeeInUSD.
+     */
+    function getMinimumEthAmountToEnter() public view returns (uint256 ethAmount) {
+        (, int256 price,,,) = i_priceFeed.latestRoundData();
+        ethAmount = i_minimumEntranceFeeInUSD * PRECISION / uint256(price);
     }
 
     /**
@@ -178,73 +188,73 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
      */
     function getRaffleState() external view returns (RaffleState) {
         return s_raffleState;
-    }
+    } // done
 
     function getNumWords() external pure returns (uint256) {
         return NUM_WORDS;
-    }
+    } // done
 
     function getRequestConfirmations() external pure returns (uint256) {
         return REQUEST_CONFIRMATIONS;
-    }
+    } // done
 
     function getRecentWinner() external view returns (address) {
         return s_recentWinner;
-    }
+    } // done
 
     function getPlayer(uint256 index) external view returns (address) {
         return s_players[index];
-    }
+    } // done
 
     function getLastTimeStamp() external view returns (uint256) {
         return s_lastTimeStamp;
-    }
+    } // done
 
     function getInterval() external view returns (uint256) {
         return i_interval;
-    }
+    } // done
 
     function getEntranceFee() external view returns (uint256) {
-        return i_entranceFee;
-    }
+        return i_minimumEntranceFeeInUSD;
+    } // done
 
     function getNumberOfPlayers() external view returns (uint256) {
         return s_players.length;
-    }
+    } // done
 
     function getPriceFeedAddress() external view returns (address) {
         return address(i_priceFeed);
-    }
+    } //done
 
     function getTotalEthValue() external view returns (uint256) {
         return s_totalEthValue;
-    }
+    } // done
 
     function getSubscriptionId() external view returns (uint256) {
         return i_subscriptionId;
-    }
+    } // done
 
     function getGasLane() external view returns (bytes32) {
         return i_gasLane;
-    }
+    } // done
 
     function getCallbackGasLimit() external view returns (uint256) {
         return i_callbackGasLimit;
-    }
+    } // done
 
     function getVrfCoordinatorV2() external view returns (address) {
         return address(i_vrfCoordinator);
-    }
+    } // done
 
-    function getPricion() external pure returns (uint256) {
+    function getPrecision() external pure returns (uint256) {
         return PRECISION;
-    }
+    } // done
 
     function getCurrentRoundId() external view returns (uint256) {
         return s_currentRoundId;
-    }
+    } // done
 
     function getIsEntered(address player) external view returns (bool) {
-        return s_isEntered[player] == s_currentRoundId;
-    }
+        return s_hasEntered[player] == s_currentRoundId;
+    } // done
 }

@@ -15,6 +15,11 @@ contract CreateSubscription is Script {
         return createSubscription(vrfCoordinatorV2, deployerKey);
     }
 
+    /**
+     * @dev This is added to exclude this contract from coverage.
+     */
+    function testExclude() public {}
+
     function createSubscription(address vrfCoordinatorV2, uint256 deployerKey) public returns (uint64) {
         console.log("Creating subscription on chainId: %d", block.chainid);
         vm.startBroadcast(deployerKey);
@@ -31,6 +36,11 @@ contract CreateSubscription is Script {
 }
 
 contract AddConsumer is Script {
+    /**
+     * @dev This is added to exclude this contract from coverage.
+     */
+    function testExclude() public {}
+
     function addConsumer(address contractToAddToVrf, address vrfCoordinator, uint64 subId, uint256 deployerKey)
         public
     {
@@ -55,6 +65,11 @@ contract AddConsumer is Script {
 }
 
 contract FundSubscription is Script {
+    /**
+     * @dev This is added to exclude this contract from coverage.
+     */
+    function testExclude() public {}
+
     uint96 public constant FUND_AMOUNT = 3 ether;
 
     function fundSubscriptionUsingConfig() public {

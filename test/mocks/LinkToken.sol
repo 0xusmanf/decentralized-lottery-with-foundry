@@ -20,6 +20,11 @@ contract LinkToken is ERC20 {
     event Transfer(address indexed from, address indexed to, uint256 value, bytes data);
 
     /**
+     * @dev This is added to exclude this contract from coverage.
+     */
+    function testExclude() public {}
+
+    /**
      * @dev transfer token to a contract address with additional data if the recipient is a contact.
      * @param _to The address to transfer to.
      * @param _value The amount to be transferred.

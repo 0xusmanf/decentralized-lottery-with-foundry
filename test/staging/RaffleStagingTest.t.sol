@@ -11,7 +11,7 @@ import {StdCheats} from "forge-std/StdCheats.sol";
 import {VRFCoordinatorV2Mock} from "../mocks/VRFCoordinatorV2Mock.sol";
 import {CreateSubscription} from "../../script/Interactions.s.sol";
 
-contract RaffleTest is StdCheats, Test {
+contract RaffleIntigrationTest is StdCheats, Test {
     /* Errors */
     event RequestedRaffleWinner(uint256 indexed requestId);
     event RaffleEnter(address indexed player);
@@ -33,7 +33,7 @@ contract RaffleTest is StdCheats, Test {
 
     function setUp() external {
         DeployRaffle deployer = new DeployRaffle();
-        (raffle, helperConfig) = deployer.run();
+        (raffle, helperConfig, subscriptionId) = deployer.run();
         vm.deal(PLAYER, STARTING_USER_BALANCE);
 
         (
