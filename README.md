@@ -1,12 +1,42 @@
 <!-- @format -->
 
-### Disclaimer: This is an unaudited project made for skill demonstration purposes, DO NOT DEPLOY IT MAINNET.
+### Disclaimer: This is an unaudited project made for skill demonstration purposes, DO NOT USE IT IN PRODUCTION.
 
-# Foundry Decentralized Lottery using Chainlink VRF and Automation
+# Decentralized Raffle Smart Contract
 
-# Getting Started
+![Foundry Tests](https://img.shields.io/badge/Foundry-Tests%20Passing-brightgreen) ![Solidity](https://img.shields.io/badge/Solidity-v0.8.19-blue) ![License](https://img.shields.io/badge/License-MIT-green)
 
-## Requirements
+A provably fair, automated, and decentralized smart contract for running a raffle or lottery on the Ethereum blockchain. This project leverages industry-standard tools like Foundry for development and testing, and integrates Chainlink's suite of oracle services to ensure security and reliability without a centralized operator.
+
+This project is designed to demonstrate a comprehensive understanding of the full smart contract development lifecycle, from initial design and robust testing to deployment and on-chain interaction.
+
+## How It Works
+
+The raffle operates in a simple, cyclical state machine managed by code, time, and external triggers, ensuring fairness and transparency.
+
+1.  **Open State**: Players can enter the raffle by calling the `enterRaffle()` function and paying the minimum entrance fee in ETH. The contract uses Chainlink Price Feeds to accurately calculate the equivalent ETH amount for a fixed USD fee.
+2.  **Automation Trigger**: Chainlink Automation (formerly Keepers) continuously monitors the contract. Once a predefined time interval has passed since the last raffle, the Automation network calls the `performUpkeep()` function.
+3.  **Calculating State**: The contract transitions to a `CALCULATING` state. `performUpkeep()` requests a provably random number from the Chainlink VRF (Verifiable Random Function) v2 coordinator.
+4.  **Winner Selection**: The Chainlink VRF coordinator provides a truly random number back to the contract via the `fulfillRandomWords()` callback function. This function uses the random number to select a winner from the array of participants.
+5.  **Prize Distribution & Reset**: The contract automatically transfers the entire prize pool to the winner's address. It then resets its state back to `OPEN` for the next round, updating the timestamp and clearing the list of players.
+
+## Key Features
+
+This project demonstrates proficiency in several key areas of smart contract development:
+
+*   **Provably Fair Randomness**: By using **Chainlink VRF v2**, the winner selection is cryptographically secure and verifiable on-chain, preventing any form of manipulation by the contract owner or oracle operators.
+*   **Decentralized Automation**: The raffle is fully automated via **Chainlink Automation**. This removes the need for a centralized admin to manually trigger winner selection, reducing operational risk and enhancing decentralization.
+*   **Stable Value Entry Fee**: Integrates **Chainlink Price Feeds** to allow the entry fee to be denominated in USD while being paid in ETH, protecting users from ETH price volatility.
+*   **Advanced Testing with Foundry**:
+    *   **Unit Testing**: Core functions are validated with precise and isolated tests.
+    *   **Fuzz Testing**: The contract is hardened against unexpected inputs by running property-based tests with a wide range of random data, ensuring resilience and security.
+    *   **Fork Testing**: Tests are run on a fork of a live testnet to ensure correct interaction with real-world contracts.
+*   **Modern Solidity Practices**: Written in Solidity v0.8.19, incorporating custom errors for gas efficiency and a clear C-style contract layout.
+*   **Robust Scripting**: Deployment and interaction are managed through modular scripts within the Foundry framework, allowing for repeatable and reliable contract management.
+
+## Getting Started
+
+### Prerequisites
 
 - [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
   - You'll know you did it right if you can run `git --version` and you see a response like `git version x.x.x`
