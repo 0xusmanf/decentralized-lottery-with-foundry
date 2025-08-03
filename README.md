@@ -1,6 +1,6 @@
 <!-- @format -->
 
-### Disclaimer: This is an unaudited project made for skill demonstration purposes, DO NOT USE IT IN PRODUCTION.
+### Disclaimer: This is an unaudited project made for skill demonstration purposes, DO NOT DEPLOY IT MAINNET.
 
 # Foundry Decentralized Lottery using Chainlink VRF and Automation
 
