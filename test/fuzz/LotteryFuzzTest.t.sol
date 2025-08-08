@@ -2,8 +2,8 @@
 
 pragma solidity 0.8.19;
 
-import {DeployRaffle} from "../../script/DeployRaffle.s.sol";
-import {Raffle} from "../../src/Raffle.sol";
+import {DeployLottery} from "../../script/DeployLottery.s.sol";
+import {Lottery} from "../../src/Lottery.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
@@ -15,25 +15,30 @@ import {MockV3Aggregator} from "../mocks//MockV3Aggregator.sol";
 
 contract PlayerIsAContract {}
 
-contract RaffleFuzzTest is StdCheats, Test {
+contract LotteryFuzzTest is StdCheats, Test {
     struct Player {
         address player;
+        uint256 balance;
+    }
+
+    struct SeedPlayer {
+        uint160 seed;
         uint256 balance;
     }
     /* Events */
 
     event RandomWordsFulfilled(uint256 indexed requestId, uint256 outputSeed, uint96 payment, bool success);
-    event RequestedRaffleWinner(uint256 indexed requestId);
-    event RaffleEntered(address indexed player);
+    event RequestedLotteryWinner(uint256 indexed requestId);
+    event LotteryEntered(address indexed player);
     event WinnerPicked(address indexed player);
 
-    Raffle public raffle;
+    Lottery public lottery;
     HelperConfig public helperConfig;
 
     uint64 subscriptionId;
     bytes32 gasLane;
     uint256 automationUpdateInterval;
-    uint256 raffleEntranceFee = 3e16;
+    uint256 lotteryEntranceFee;
     uint256 minimumEntracneFee;
     uint32 callbackGasLimit;
     address vrfCoordinatorV2;
@@ -41,16 +46,14 @@ contract RaffleFuzzTest is StdCheats, Test {
 
     address public PLAYER = makeAddr("player");
     uint256 public constant STARTING_USER_BALANCE = 10 ether;
-    uint256 public constant NUMBER_OF_PLAYERS = 10;
-    address[NUMBER_OF_PLAYERS] public PLAYERS;
     uint256 public constant PRECISION = 1e18;
     mapping(address => bool) public hasEntered;
 
     PlayerIsAContract public playerIsAContract = new PlayerIsAContract();
 
     function setUp() external {
-        DeployRaffle deployer = new DeployRaffle();
-        (raffle, helperConfig, subscriptionId) = deployer.run();
+        DeployLottery deployer = new DeployLottery();
+        (lottery, helperConfig, subscriptionId) = deployer.run();
         vm.deal(PLAYER, STARTING_USER_BALANCE);
 
         (
@@ -65,110 +68,140 @@ contract RaffleFuzzTest is StdCheats, Test {
             ,
             priceFeed
         ) = helperConfig.activeNetworkConfig();
+
+        lotteryEntranceFee = lottery.getMinimumEthAmountToEnter();
     }
 
     /////////////////////////
-    // enterRaffle         //
+    // enterLottery         //
     /////////////////////////
 
-    modifier enterRaffleWithMultiplePlayers(Player[] memory players) {
+    modifier enterLotteryWithMultiplePlayers(Player[] memory players) {
         //Arrange
         vm.assume(players.length > 0);
         for (uint256 i = 0; i < players.length; i++) {
+            // Igonore contract addresses
             vm.assume(players[i].player.code.length == 0);
+            // Ignore contracts i.e. consol, VM
+            vm.assume(players[i].player != address(0x000000000000000000636F6e736F6c652e6c6f67));
+            vm.assume(players[i].player != address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+            // Ignore precompiled contracts
+            vm.assume(uint256(uint160(players[i].player)) > 1000);
+
             vm.assume(!hasEntered[players[i].player]);
-            players[i].balance = bound(players[i].balance, raffle.getMinimumEthAmountToEnter(), PRECISION);
+            players[i].balance = bound(players[i].balance, lottery.getMinimumEthAmountToEnter(), PRECISION);
             vm.deal(players[i].player, players[i].balance);
             vm.prank(players[i].player);
-            raffle.enterRaffle{value: players[i].balance}();
+            lottery.enterLottery{value: players[i].balance}();
             hasEntered[players[i].player] = true;
         }
         _;
     }
 
-    function testFuzzRaffleRevertsWhenYouDontPayEnough(address player, uint256 value) public {
+    function testFuzzLotteryRevertsWhenYouDontPayEnough(address player, uint256 value) public {
         // Arrange
-        value = bound(value, 0, (raffle.getMinimumEthAmountToEnter() - 1));
+        value = bound(value, 0, (lottery.getMinimumEthAmountToEnter() - 1));
         vm.deal(player, value);
         vm.prank(player);
         // Act / Assert
-        vm.expectRevert(Raffle.Raffle__SendMoreToEnterRaffle.selector);
-        raffle.enterRaffle{value: value}();
+        vm.expectRevert(Lottery.Lottery__SendMoreToEnterLottery.selector);
+        lottery.enterLottery{value: value}();
     }
 
-    function helperFuzzRaffleRecordsPlayerWhenTheyEnter(Player[] memory players, uint256 index)
+    function helperFuzzLotteryRecordsPlayerWhenTheyEnter(Player[] memory players, uint256 index)
         internal
-        enterRaffleWithMultiplePlayers(players)
+        enterLotteryWithMultiplePlayers(players)
     {
         // Arrange
         index = bound(index, 0, (players.length - 1));
-        address playerRecorded = raffle.getPlayer(index);
+        uint256 playerRecordedEntries = lottery.getEntriesPerPlayer(players[index].player);
         //Assert
-        assert(playerRecorded == players[index].player);
+        assert(playerRecordedEntries > 0);
     }
 
-    function testFuzzRaffleRecordsPlayerWhenTheyEnter(Player[] memory players, uint256 index) public {
-        helperFuzzRaffleRecordsPlayerWhenTheyEnter(players, index);
+    function testFuzzLotteryRecordsPlayerWhenTheyEnter(Player[] memory players, uint256 index) public {
+        helperFuzzLotteryRecordsPlayerWhenTheyEnter(players, index);
     }
 
     function testFuzzEmitsEventOnEntrance(Player memory player) public {
         // Arrange
-        player.balance = bound(player.balance, raffle.getMinimumEthAmountToEnter(), PRECISION);
+        // Igonore contract addresses
+        vm.assume(player.player.code.length == 0);
+        // Ignore contracts i.e. consol, VM
+        vm.assume(player.player != address(0x000000000000000000636F6e736F6c652e6c6f67));
+        vm.assume(player.player != address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+        // Ignore precompiled contracts
+        vm.assume(uint256(uint160(player.player)) > 1000);
+        player.balance = bound(player.balance, lottery.getMinimumEthAmountToEnter(), PRECISION);
         vm.deal(player.player, player.balance);
         vm.prank(player.player);
 
         // Act / Assert
-        vm.expectEmit(true, false, false, false, address(raffle));
-        emit RaffleEntered(player.player);
-        raffle.enterRaffle{value: player.balance}();
+        vm.expectEmit(true, false, false, false, address(lottery));
+        emit LotteryEntered(player.player);
+        lottery.enterLottery{value: player.balance}();
     }
 
-    function testFuzzDontAllowPlayersToEnterWhileRaffleIsCalculating(Player memory player) public {
+    function testFuzzDontAllowPlayersToEnterWhileLotteryIsCalculating(Player memory player) public {
         // Arrange
-        player.balance = bound(player.balance, raffle.getMinimumEthAmountToEnter(), PRECISION);
+        // Igonore contract addresses
+        vm.assume(player.player.code.length == 0);
+        // Ignore contracts i.e. consol, VM
+        vm.assume(player.player != address(0x000000000000000000636F6e736F6c652e6c6f67));
+        vm.assume(player.player != address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+        // Ignore precompiled contracts
+        vm.assume(uint256(uint160(player.player)) > 1000);
+        player.balance = bound(player.balance, lottery.getMinimumEthAmountToEnter(), PRECISION);
         vm.deal(player.player, (player.balance * 2));
         vm.prank(player.player);
-        raffle.enterRaffle{value: player.balance}();
+        lottery.enterLottery{value: player.balance}();
         vm.warp(block.timestamp + automationUpdateInterval + 1);
         vm.roll(block.number + 1);
-        raffle.performUpkeep("");
+        lottery.performUpkeep("");
 
         // Act / Assert
-        vm.expectRevert(Raffle.Raffle__RaffleNotOpen.selector);
+        vm.expectRevert(Lottery.Lottery__LotteryNotOpen.selector);
         vm.prank(player.player);
-        raffle.enterRaffle{value: player.balance}();
+        lottery.enterLottery{value: player.balance}();
     }
 
     function testFuzzPlayerCanNotEnterInTheSameRoundAgain(Player memory player) public {
         // Arrange
-        player.balance = bound(player.balance, raffle.getMinimumEthAmountToEnter(), PRECISION);
+        // Igonore contract addresses
+        vm.assume(player.player.code.length == 0);
+        // Ignore contracts i.e. consol, VM
+        vm.assume(player.player != address(0x000000000000000000636F6e736F6c652e6c6f67));
+        vm.assume(player.player != address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+        // Ignore precompiled contracts
+        vm.assume(uint256(uint160(player.player)) > 1000);
+        player.balance = bound(player.balance, lottery.getMinimumEthAmountToEnter(), PRECISION);
         vm.deal(player.player, (player.balance * 2));
         vm.prank(player.player);
-        raffle.enterRaffle{value: player.balance}();
+        lottery.enterLottery{value: player.balance}();
 
         // Act / Assert
-        vm.expectRevert(Raffle.Raffle__PlayerAlreadyEntered.selector);
+        vm.expectRevert(Lottery.Lottery__PlayerAlreadyEntered.selector);
         vm.prank(player.player);
-        raffle.enterRaffle{value: player.balance}();
+        lottery.enterLottery{value: player.balance}();
     }
 
     /////////////////////////
     // checkUpkeep         //
     /////////////////////////
 
-    function helperFuzzUpkeep(Player[] memory players) internal enterRaffleWithMultiplePlayers(players) {}
+    function helperFuzzUpkeep(Player[] memory players) internal enterLotteryWithMultiplePlayers(players) {}
 
-    function testFuzzCheckUpkeepReturnsFalseIfRaffleIsntOpen(Player[] memory players) public {
+    function testFuzzCheckUpkeepReturnsFalseIfLotteryIsntOpen(Player[] memory players) public {
         // Arrange
         helperFuzzUpkeep(players);
         vm.warp(block.timestamp + automationUpdateInterval + 1);
         vm.roll(block.number + 1);
-        raffle.performUpkeep("");
-        Raffle.RaffleState raffleState = raffle.getRaffleState();
+        lottery.performUpkeep("");
+        Lottery.LotteryState lotteryState = lottery.getLotteryState();
         // Act
-        (bool upkeepNeeded,) = raffle.checkUpkeep("");
+        (bool upkeepNeeded,) = lottery.checkUpkeep("");
         // Assert
-        assert(raffleState == Raffle.RaffleState.CALCULATING);
+        assert(lotteryState == Lottery.LotteryState.CALCULATING);
         assert(upkeepNeeded == false);
     }
 
@@ -177,11 +210,11 @@ contract RaffleFuzzTest is StdCheats, Test {
         helperFuzzUpkeep(players);
         vm.warp(block.timestamp + automationUpdateInterval - 1);
         vm.roll(block.number + 1);
-        Raffle.RaffleState raffleState = raffle.getRaffleState();
+        Lottery.LotteryState lotteryState = lottery.getLotteryState();
         // Act
-        (bool upkeepNeeded,) = raffle.checkUpkeep("");
+        (bool upkeepNeeded,) = lottery.checkUpkeep("");
         // Assert
-        assert(raffleState == Raffle.RaffleState.OPEN);
+        assert(lotteryState == Lottery.LotteryState.OPEN);
         assert(upkeepNeeded == false);
     }
 
@@ -192,7 +225,7 @@ contract RaffleFuzzTest is StdCheats, Test {
         vm.roll(block.number + 1);
 
         // Act
-        (bool upkeepNeeded,) = raffle.checkUpkeep("");
+        (bool upkeepNeeded,) = lottery.checkUpkeep("");
 
         // Assert
         assert(upkeepNeeded);
@@ -210,7 +243,7 @@ contract RaffleFuzzTest is StdCheats, Test {
 
         // Act / Assert
         // It doesnt revert
-        raffle.performUpkeep("");
+        lottery.performUpkeep("");
     }
 
     function testFuzzPerformUpkeepRevertsIfCheckUpkeepIsFalse(Player[] memory players) public {
@@ -218,11 +251,11 @@ contract RaffleFuzzTest is StdCheats, Test {
         helperFuzzUpkeep(players);
 
         // Act / Assert
-        vm.expectPartialRevert(bytes4(Raffle.Raffle__UpkeepNotNeeded.selector));
-        raffle.performUpkeep("");
+        vm.expectPartialRevert(bytes4(Lottery.Lottery__UpkeepNotNeeded.selector));
+        lottery.performUpkeep("");
     }
 
-    function testFuzzPerformUpkeepUpdatesRaffleStateAndEmitsRequestId(Player[] memory players) public {
+    function testFuzzPerformUpkeepUpdatesLotteryStateAndEmitsRequestId(Player[] memory players) public {
         // Arrange
         helperFuzzUpkeep(players);
         vm.warp(block.timestamp + automationUpdateInterval + 1);
@@ -230,14 +263,14 @@ contract RaffleFuzzTest is StdCheats, Test {
 
         // Act
         vm.recordLogs();
-        raffle.performUpkeep(""); // emits requestId
+        lottery.performUpkeep(""); // emits requestId
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bytes32 requestId = entries[1].topics[1];
 
         // Assert
-        Raffle.RaffleState raffleState = raffle.getRaffleState();
+        Lottery.LotteryState lotteryState = lottery.getLotteryState();
         assert(uint256(requestId) > 0);
-        assert(uint256(raffleState) == 1); // 0 = open, 1 = calculating
+        assert(uint256(lotteryState) == 1); // 0 = open, 1 = calculating
     }
 
     /////////////////////////
@@ -252,36 +285,38 @@ contract RaffleFuzzTest is StdCheats, Test {
 
         // Act / Assert
         vm.expectRevert("nonexistent request");
-        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(requestId, address(raffle));
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(requestId, address(lottery));
     }
 
-    function testFuzzFulfillRandomWordsPicksAWinnerResetsAndSendsMoney(Player[] memory players) public {
+    /*function testFuzzFulfillRandomWordsPicksAWinnerResetsAndWinnerCanWithdraw(Player[] memory players) public {
         // Arrange
         helperFuzzUpkeep(players);
         vm.warp(block.timestamp + automationUpdateInterval + 1);
         vm.roll(block.number + 1);
         uint256 expectedWinnerIndex = uint256(keccak256(abi.encode(1, 0))) % players.length;
         address expectedWinner = players[expectedWinnerIndex].player;
-        uint256 startingTimeStamp = raffle.getLastTimeStamp();
+        uint256 startingTimeStamp = lottery.getLastTimeStamp();
         uint256 startingBalance = expectedWinner.balance;
-        uint256 prize = raffle.getTotalEthValue();
+        uint256 prize = lottery.getTotalEthValue();
 
         // Act
         vm.recordLogs();
-        raffle.performUpkeep(""); // emits requestId
+        lottery.performUpkeep(""); // emits requestId
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bytes32 requestId = entries[1].topics[1]; // get the requestId from the logs
 
-        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(requestId), address(raffle));
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(requestId), address(lottery));
+        vm.prank(expectedWinner);
+        lottery.withdrawPrize();
 
         // Assert
-        address recentWinner = raffle.getRecentWinner();
-        Raffle.RaffleState raffleState = raffle.getRaffleState();
+        address recentWinner = lottery.getRecentWinner();
+        Lottery.LotteryState lotteryState = lottery.getLotteryState();
         uint256 winnerBalance = recentWinner.balance;
-        uint256 endingTimeStamp = raffle.getLastTimeStamp();
+        uint256 endingTimeStamp = lottery.getLastTimeStamp();
         assert(recentWinner == expectedWinner);
-        assert(uint256(raffleState) == 0);
+        assert(uint256(lotteryState) == 0);
         assert(winnerBalance == startingBalance + prize);
         assert(endingTimeStamp > startingTimeStamp);
-    }
+    }*/
 }

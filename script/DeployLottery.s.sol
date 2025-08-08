@@ -3,18 +3,18 @@ pragma solidity 0.8.19;
 
 import {Script} from "forge-std/Script.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
-import {Raffle} from "../src/Raffle.sol";
+import {Lottery} from "../src/Lottery.sol";
 import {AddConsumer, CreateSubscription, FundSubscription} from "./Interactions.s.sol";
 
-contract DeployRaffle is Script {
-    function run() external returns (Raffle, HelperConfig, uint64) {
+contract DeployLottery is Script {
+    function run() external returns (Lottery, HelperConfig, uint64) {
         HelperConfig helperConfig = new HelperConfig(); // This comes with our mocks!
         AddConsumer addConsumer = new AddConsumer();
         (
             uint64 subscriptionId,
             bytes32 gasLane,
             uint256 automationUpdateInterval,
-            uint256 raffleEntranceFee,
+            uint256 lotteryEntranceFee,
             uint32 callbackGasLimit,
             address vrfCoordinatorV2,
             address link,
@@ -31,11 +31,11 @@ contract DeployRaffle is Script {
         }
 
         vm.startBroadcast(deployerKey);
-        Raffle raffle = new Raffle(
+        Lottery lottery = new Lottery(
             subscriptionId,
             gasLane,
             automationUpdateInterval,
-            raffleEntranceFee,
+            lotteryEntranceFee,
             callbackGasLimit,
             vrfCoordinatorV2,
             priceFeed
@@ -43,7 +43,7 @@ contract DeployRaffle is Script {
         vm.stopBroadcast();
 
         // We already have a broadcast in here
-        addConsumer.addConsumer(address(raffle), vrfCoordinatorV2, subscriptionId, deployerKey);
-        return (raffle, helperConfig, subscriptionId);
+        addConsumer.addConsumer(address(lottery), vrfCoordinatorV2, subscriptionId, deployerKey);
+        return (lottery, helperConfig, subscriptionId);
     }
 }
