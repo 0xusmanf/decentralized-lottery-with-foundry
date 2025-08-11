@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.19;
+pragma solidity 0.8.20;
 
 import {DeployLottery} from "../../script/DeployLottery.s.sol";
 import {Lottery} from "../../src/Lottery.sol";
@@ -13,6 +13,7 @@ import {CreateSubscription} from "../../script/Interactions.s.sol";
 import {LibString} from "@solmate/utils/LibString.sol";
 import {MockV3Aggregator} from "../mocks//MockV3Aggregator.sol";
 import {OracleLib} from "../../src/libraries/OracleLib.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract PlayerIsAContract {}
 
@@ -20,7 +21,7 @@ contract LotteryUnitTest is StdCheats, Test {
     /* Events */
     event RandomWordsFulfilled(uint256 indexed requestId, uint256 outputSeed, uint96 payment, bool indexed success);
     event RequestedLotteryWinner(uint256 indexed requestId);
-    event LotteryEntered(address indexed player);
+    event LotteryEntered(address indexed player, uint256 numberOfEntries);
     event WinnerPicked(address indexed player);
 
     Lottery public lottery;
@@ -40,6 +41,7 @@ contract LotteryUnitTest is StdCheats, Test {
     uint256 public constant NUMBER_OF_PLAYERS = 10;
     address[NUMBER_OF_PLAYERS] public PLAYERS;
     uint256 public constant PRECISION = 1e18;
+    uint256 public PROTOCOL_FEE_PERCENTAGE;
 
     PlayerIsAContract public playerIsAContract = new PlayerIsAContract();
 
@@ -62,6 +64,7 @@ contract LotteryUnitTest is StdCheats, Test {
         ) = helperConfig.activeNetworkConfig();
 
         lotteryEntranceFee = lottery.getMinimumEthAmountToEnter();
+        PROTOCOL_FEE_PERCENTAGE = lottery.getProtocolFeePercentage();
     }
 
     function testLotteryInitializesInOpenState() public view {
@@ -104,23 +107,16 @@ contract LotteryUnitTest is StdCheats, Test {
 
     function testLotteryRecordsPlayerEntriesAndReturnsRemainingBalance() public {
         // Arrange
-        vm.deal(PLAYER, (lotteryEntranceFee * 5) + 2e10);
+        uint256 expectedReturnBalance = 2e10;
+        vm.deal(PLAYER, (lotteryEntranceFee * 5) + expectedReturnBalance);
         vm.prank(PLAYER);
         // Act
-        lottery.enterLottery{value: (lotteryEntranceFee * 5) + 2e10}();
+        lottery.enterLottery{value: (lotteryEntranceFee * 5) + expectedReturnBalance}();
         // Assert
         address playerRecorded1 = lottery.getPlayer(0);
-        address playerRecorded2 = lottery.getPlayer(1);
-        address playerRecorded3 = lottery.getPlayer(2);
-        address playerRecorded4 = lottery.getPlayer(3);
-        address playerRecorded5 = lottery.getPlayer(4);
         assert(playerRecorded1 == PLAYER);
-        assert(playerRecorded2 == PLAYER);
-        assert(playerRecorded3 == PLAYER);
-        assert(playerRecorded4 == PLAYER);
-        assert(playerRecorded5 == PLAYER);
-        assert(PLAYER.balance == 2e10);
-        assert(lottery.getEntriesPerPlayer(PLAYER) == 5);
+        assert(PLAYER.balance == expectedReturnBalance);
+        assert(lottery.getEntriesPerPlayer(1, PLAYER) == 5);
     }
 
     function testEmitsEventOnEntrance() public {
@@ -129,7 +125,7 @@ contract LotteryUnitTest is StdCheats, Test {
 
         // Act / Assert
         vm.expectEmit(true, false, false, false, address(lottery));
-        emit LotteryEntered(PLAYER);
+        emit LotteryEntered(PLAYER, 1);
         lottery.enterLottery{value: lotteryEntranceFee}();
     }
 
@@ -158,10 +154,55 @@ contract LotteryUnitTest is StdCheats, Test {
         lottery.enterLottery{value: lotteryEntranceFee}();
     }
 
+    function testEnterLotteryRevertsWhenMaxPlayersReached() public {
+        uint256 maxPlayers = 50;
+
+        for (uint256 i = 0; i < maxPlayers; i++) {
+            address player = address(uint160(1000 + i));
+            hoax(player, 1 ether);
+            lottery.enterLottery{value: lotteryEntranceFee}();
+        }
+
+        address extra = address(uint160(9999));
+        hoax(extra, 1 ether);
+        vm.expectRevert(Lottery.Lottery__LotteryIsFull.selector);
+        lottery.enterLottery{value: lotteryEntranceFee}();
+    }
+
+    function testEnterLotteryRevertsWhenMoreThanFiveEntries() public {
+        vm.deal(PLAYER, (lotteryEntranceFee * 6));
+        vm.prank(PLAYER);
+        vm.expectRevert(Lottery.Lottery__MoreThenFiveEntriesNotAllowed.selector);
+        lottery.enterLottery{value: lotteryEntranceFee * 6}();
+    }
+
+    function testEnterRefundRevertsWhenRefundToContractFails() public {
+        uint256 overpay = (lotteryEntranceFee * 2) + 1;
+        vm.deal(address(playerIsAContract), overpay);
+        vm.prank(address(playerIsAContract));
+        vm.expectRevert(Lottery.Lottery__ReturnAmountTransferFailed.selector);
+        lottery.enterLottery{value: overpay}();
+    }
+
     function testGetMinimumEthAmountToEnter() public view {
         (, int256 price,,,) = MockV3Aggregator(priceFeed).latestRoundData();
         uint256 EthAmount = minimumEntracneFee * PRECISION / uint256(price);
         assert(lottery.getMinimumEthAmountToEnter() == EthAmount);
+    }
+
+    function testGetPrizeValueOfCurrentRoundCalculation() public {
+        // No entries => prize should be zero
+        assert(lottery.getPrizeValueOfCurrentRound() == 0);
+
+        // Let one player enter with 2 entries, check prize value matches formula
+        vm.deal(PLAYER, (lotteryEntranceFee * 2));
+        vm.prank(PLAYER);
+        lottery.enterLottery{value: lotteryEntranceFee * 2}();
+        // fee = ethValueOfRound * 5% ; prize = ethValueOfRound - fee
+        uint256 ethValue = lottery.getEthValueOfCurrentRound(); // after enter it's populated
+        uint256 fee = (ethValue * PROTOCOL_FEE_PERCENTAGE) / PRECISION;
+        uint256 expectedPrize = ethValue - fee;
+        assert(lottery.getPrizeValueOfCurrentRound() == expectedPrize);
     }
 
     function testEnterLotteryRevertsIfPriceIsStale() public {
@@ -173,6 +214,99 @@ contract LotteryUnitTest is StdCheats, Test {
         vm.prank(PLAYER);
         vm.expectRevert(OracleLib.OracleLib__StalePrice.selector);
         lottery.enterLottery{value: lotteryEntranceFee}();
+    }
+
+    /////////////////////////
+    // withdraw            //
+    /////////////////////////
+
+    function testWithdrawPrizeToAnAddressFlow() public lotteryEntered skipFork {
+        // Arrange: add additional entrants so there is a prize and fee
+        // add more entrants to increase pool
+        for (uint256 i = 2; i < 5; i++) {
+            address player = address(uint160(i));
+            hoax(player, 1 ether);
+            lottery.enterLottery{value: lotteryEntranceFee}();
+        }
+
+        // Move time, call upkeep, get request id and fulfill
+        vm.warp(block.timestamp + automationUpdateInterval + 1);
+        vm.roll(block.number + 1);
+
+        vm.recordLogs();
+        lottery.performUpkeep("");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 requestId = entries[1].topics[1];
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(requestId), address(lottery));
+
+        // get winner and prize amount
+        address recentWinner = lottery.getRecentWinner();
+        uint256 prize = lottery.getWinnerPrize(recentWinner);
+        assert(prize > 0);
+
+        // Only owner can enable withdraw-to-an-address
+        // fetch deployerKey to obtain owner address
+        (,,,,,,, uint256 deployerKey,) = helperConfig.activeNetworkConfig();
+        address owner = vm.addr(deployerKey);
+
+        // Non-owner enabling should revert (sanity)
+        vm.prank(PLAYER); // random non-owner
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        lottery.setWithdrawPrizeToAnAddressEnabled(true);
+
+        // Owner enables flag
+        vm.prank(owner);
+        lottery.setWithdrawPrizeToAnAddressEnabled(true);
+        assert(lottery.getWithdrawPrizeToAnAddressState() == true);
+
+        // Withdraw to zero address should revert
+        vm.prank(recentWinner);
+        vm.expectRevert(Lottery.Lottery__TransferNotAllowedToZeroAddress.selector);
+        lottery.withdrawPrizeToAnAddress(address(0));
+
+        // Withdraw to a different receiver should succeed and disable the flag
+        address receiver = makeAddr("receiver");
+        uint256 receiverStarting = receiver.balance;
+        vm.prank(recentWinner);
+        lottery.withdrawPrizeToAnAddress(receiver);
+        assert(lottery.getWithdrawPrizeToAnAddressState() == false);
+        assert(lottery.getWinnerPrize(recentWinner) == 0);
+        assert(receiver.balance == receiverStarting + prize);
+    }
+
+    function testWithdrawProtocolFeeOnlyOwnerAndResetsCollectedFee() public lotteryEntered skipFork {
+        // Arrange: create a small pool, perform upkeep and fulfill to collect fee
+        // Add an extra entrant so totalEntries > 0
+        address extra = address(uint160(1234));
+        hoax(extra, 1 ether);
+        lottery.enterLottery{value: lotteryEntranceFee}();
+
+        vm.warp(block.timestamp + automationUpdateInterval + 1);
+        vm.roll(block.number + 1);
+        vm.recordLogs();
+        lottery.performUpkeep("");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 requestId = entries[1].topics[1];
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(requestId), address(lottery));
+
+        // compute expected fee (read from contract state)
+        uint256 feeCollected = lottery.getTotalFeeCollected();
+        assert(feeCollected > 0);
+
+        // non-owner cannot call withdrawProtocolFee
+        vm.prank(PLAYER);
+        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        lottery.withdrawProtocolFee();
+
+        // owner withdraws and fee resets
+        (,,,,,,, uint256 deployerKey,) = helperConfig.activeNetworkConfig();
+        address owner = vm.addr(deployerKey);
+
+        uint256 ownerStarting = owner.balance;
+        vm.prank(owner);
+        lottery.withdrawProtocolFee();
+        assert(lottery.getTotalFeeCollected() == 0);
+        assert(owner.balance == ownerStarting + feeCollected);
     }
 
     /////////////////////////
@@ -342,9 +476,9 @@ contract LotteryUnitTest is StdCheats, Test {
         Lottery.LotteryState lotteryState = lottery.getLotteryState();
         uint256 winnerBalance = recentWinner.balance;
         uint256 endingTimeStamp = lottery.getLastTimeStamp();
-        uint256 prize = lotteryEntranceFee * (additionalEntrances + 1);
+        uint256 fee = ((lotteryEntranceFee * (additionalEntrances + 1)) * PROTOCOL_FEE_PERCENTAGE) / PRECISION;
+        uint256 prize = (lotteryEntranceFee * (additionalEntrances + 1)) - fee;
 
-        console.log("Recent Winner: ", recentWinner, " <> ", expectedWinner);
         assert(recentWinner == expectedWinner);
         console.log("Lottery State: ", uint256(lotteryState));
         assert(uint256(lotteryState) == 0);
@@ -423,6 +557,65 @@ contract LotteryUnitTest is StdCheats, Test {
     // getter functions //
     //////////////////////
 
+    function testGetTotalFeeCollectedMatchesExpected() public lotteryEntered skipFork {
+        // add another player to generate a bigger pool
+        address p2 = makeAddr("p2");
+        hoax(p2, 1 ether);
+        lottery.enterLottery{value: lotteryEntranceFee}();
+
+        vm.warp(block.timestamp + automationUpdateInterval + 1);
+        vm.roll(block.number + 1);
+        vm.recordLogs();
+        lottery.performUpkeep("");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 reqId = logs[1].topics[1];
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(reqId), address(lottery));
+
+        uint256 fee = lottery.getTotalFeeCollected();
+        uint256 ethValue = lottery.getTotalEthValue();
+        assertGt(fee, 0);
+        // protocol fee should be <= total ethValue of round
+        assertLe(fee, ethValue);
+    }
+
+    function testProtocolFeePercentageAndPrecisionConstants() public view {
+        uint256 percentage = lottery.getProtocolFeePercentage();
+        uint256 precision = lottery.getPrecision();
+        assertEq(percentage, 5e16); // example: 5% if PRECISION=10000
+        assertEq(precision, 1e18);
+    }
+
+    function testGetWinnerPrizeAndRecentWinner() public lotteryEntered skipFork {
+        // add another player so there's a random outcome
+        address p2 = makeAddr("p2");
+        hoax(p2, 1 ether);
+        lottery.enterLottery{value: lotteryEntranceFee}();
+
+        vm.warp(block.timestamp + automationUpdateInterval + 1);
+        vm.roll(block.number + 1);
+        vm.recordLogs();
+        lottery.performUpkeep("");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 reqId = logs[1].topics[1];
+        VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(reqId), address(lottery));
+
+        address winner = lottery.getRecentWinner();
+        uint256 prize = lottery.getWinnerPrize(winner);
+        assertTrue(winner != address(0));
+        assertGt(prize, 0);
+    }
+
+    function testGetEthValueOfCurrentRoundAfterEntries() public {
+        vm.deal(PLAYER, lotteryEntranceFee * 2);
+        vm.prank(PLAYER);
+        lottery.enterLottery{value: lotteryEntranceFee * 2}();
+        assertEq(lottery.getEthValueOfCurrentRound(), lotteryEntranceFee * 2);
+    }
+
+    function testGetWithdrawPrizeToAnAddressStateDefaultsToFalse() public view {
+        assertFalse(lottery.getWithdrawPrizeToAnAddressState());
+    }
+
     function testGetEntranceFee() public view {
         assert(lottery.getEntranceFee() == minimumEntracneFee);
     }
@@ -469,15 +662,6 @@ contract LotteryUnitTest is StdCheats, Test {
 
     function testGetCurrentRoundId() public enterLotteryWithMultiplePlayers {
         assert(lottery.getCurrentRoundId() == 1);
-    }
-
-    function testGetIsEntered() public {
-        // arrange
-        vm.prank(PLAYER);
-        lottery.enterLottery{value: lotteryEntranceFee}();
-
-        // act / assert
-        assert(lottery.getIsEntered(PLAYER) == true);
     }
 
     function testGetSubscriptionId() public view {

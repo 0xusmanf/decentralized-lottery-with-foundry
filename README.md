@@ -1,38 +1,89 @@
 <!-- @format -->
 
-### Disclaimer: This is an unaudited project made for skill demonstration purposes, DO NOT USE IT IN PRODUCTION.
+### Disclaimer: This is an **unaudited** project made for skill demonstration purposes. **DO NOT USE IN PRODUCTION.**
 
 # Decentralized Lottery
 
-![Foundry Tests](https://img.shields.io/badge/Foundry-Tests%20Passing-brightgreen) ![Solidity](https://img.shields.io/badge/Solidity-v0.8.19-blue) ![License](https://img.shields.io/badge/License-MIT-green)
+![Foundry Tests](https://img.shields.io/badge/Foundry-Tests%20Passing-brightgreen)
+![Solidity](https://img.shields.io/badge/Solidity-v0.8.20-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-A provably fair, automated, and decentralized smart contract for running lottery on the Ethereum blockchain. This project leverages industry-standard tools like Foundry for development and testing, and integrates Chainlink's suite of oracle services to ensure security and reliability without a centralized operator.
+A **provably fair**, **automated**, and **decentralized** lottery smart contract for Ethereum.  
+Built with [Foundry](https://book.getfoundry.sh/) and powered by [Chainlink VRF](https://docs.chain.link/vrf), [Chainlink Automation](https://docs.chain.link/chainlink-automation/introduction), and [Chainlink Price Feeds](https://docs.chain.link/data-feeds/price-feeds).  
 
-This project is designed to demonstrate a comprehensive understanding of the full smart contract development lifecycle, from initial design and robust testing to deployment and on-chain interaction.
+This project started as the [Cyfrin Foundry Smart Contract Lottery](https://github.com/Cyfrin/foundry-smart-contract-lottery-cu) from the *Cyfrin Updraft* course, then evolved with new features, improved architecture, and more robust testing.
 
-## How It Works
 
-The lottery operates in a simple, cyclical state machine managed by code, time, and external triggers, ensuring fairness and transparency.
+## 🚀 Improvements Over the Original Cyfrin Starter
 
-1.  **Open State**: Players can enter the lottery by calling the `enterLottery()` function and paying the minimum entrance fee in ETH. The contract uses Chainlink Price Feeds to accurately calculate the equivalent ETH amount for a fixed USD fee.
-2.  **Automation Trigger**: Chainlink Automation (formerly Keepers) continuously monitors the contract. Once a predefined time interval has passed since the last lottery, the Automation network calls the `performUpkeep()` function.
-3.  **Calculating State**: The contract transitions to a `CALCULATING` state. `performUpkeep()` requests a provably random number from the Chainlink VRF (Verifiable Random Function) v2 coordinator.
-4.  **Winner Selection**: The Chainlink VRF coordinator provides a truly random number back to the contract via the `fulfillRandomWords()` callback function. This function uses the random number to select a winner from the array of participants.
-5.  **Prize Distribution & Reset**: The contract automatically transfers the entire prize pool to the winner's address. It then resets its state back to `OPEN` for the next round, updating the timestamp and clearing the list of players.
+**Core Changes**
+- **Multi-entry per player** — 1–5 entries allowed per player per round.
+- **Max player cap** — up to 50 players per round.
+- **Protocol fee** — 5% fee on the prize pool, withdrawable by the owner.
+- **Prize accounting** — winnings tracked per address; winners withdraw manually.
+- **Withdraw-to-an-address** — owner can temporarily enable winners to withdraw to another address.
+- **Stale price protection** — via `OracleLib` (3h Chainlink price feed timeout).
+- **Expanded getters & events** — better front-end and analytics integration.
 
-## Key Features
+**Technical / Dev Changes**
+- Modular deployment scripts for:
+  - Creating/funding VRF subscriptions
+  - Adding lottery contract as VRF consumer
+  - Local mock deployment for testing
+- More extensive event logging:
+  - `LotteryEntered`
+  - `RequestedLotteryWinner`
+  - `WinnerPicked`
+  - `PrizeSent`
+  - `FeeWithdrawn`
+- Improved test suite with Foundry:
+  - Unit tests for core flows
+  - Upkeep & VRF fulfillment testing
+  - Stale oracle handling
+  - Getter coverage
 
-This project demonstrates proficiency in several key areas of smart contract development:
+## 📜 How It Works
 
-*   **Provably Fair Randomness**: By using **Chainlink VRF v2**, the winner selection is cryptographically secure and verifiable on-chain, preventing any form of manipulation by the contract owner or oracle operators.
-*   **Decentralized Automation**: The lottery is fully automated via **Chainlink Automation**. This removes the need for a centralized admin to manually trigger winner selection, reducing operational risk and enhancing decentralization.
-*   **Stable Value Entry Fee**: Integrates **Chainlink Price Feeds** to allow the entry fee to be denominated in USD while being paid in ETH, protecting users from ETH price volatility.
-*   **Advanced Testing with Foundry**:
-    *   **Unit Testing**: Core functions are validated with precise and isolated tests.
-    *   **Fuzz Testing**: The contract is hardened against unexpected inputs by running property-based tests with a wide range of random data, ensuring resilience and security.
-    *   **Fork Testing**: Tests are run on a fork of a live testnet to ensure correct interaction with real-world contracts.
-*   **Modern Solidity Practices**: Written in Solidity v0.8.19, incorporating custom errors for gas efficiency and a clear C-style contract layout.
-*   **Robust Scripting**: Deployment and interaction are managed through modular scripts within the Foundry framework, allowing for repeatable and reliable contract management.
+The lottery runs in **rounds** managed by a simple state machine:
+
+1. **Open State**
+   - Players call `enterLottery()` with ETH worth 1–5 entries.
+   - ETH value for entries is calculated from USD fee via Chainlink Price Feed.
+   - Entry refunds excess ETH (if sent).
+   - Max 50 players per round.
+
+2. **Automation Trigger**
+   - Chainlink Automation monitors for:
+     - Enough time passed (`interval`)
+     - At least one player
+     - Contract in `OPEN` state
+   - Calls `performUpkeep()` when conditions met.
+
+3. **Calculating State**
+   - `performUpkeep()` requests randomness from Chainlink VRF v2.
+
+4. **Winner Selection**
+   - VRF response triggers `fulfillRandomWords()`.
+   - Winner chosen proportional to number of entries.
+   - Protocol fee deducted; prize assigned to winner mapping.
+
+5. **Prize Withdrawal**
+   - Winner calls `withdrawPrize()` to claim.
+   - Owner can call `withdrawProtocolFee()` to collect fees.
+   - Special: Owner can enable `withdrawPrizeToAnAddress()` for non-payable winner addresses.
+
+## 🔑 Key Features
+
+- **Provably fair randomness** via Chainlink VRF v2.
+- **Decentralized automation** with Chainlink Automation (Keepers).
+- **Stable USD-denominated entry fee** with ETH conversion via Chainlink Price Feeds.
+- **Gas-efficient design** using custom errors and modern Solidity patterns.
+- **Extensive events & getters** for easy UI integration.
+- **Advanced Foundry testing**:
+  - Unit testing
+  - Fuzz testing
+  - Intigration testing
+  - Invariant testing (In progress)
 
 ## Getting Started
 
