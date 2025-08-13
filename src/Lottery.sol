@@ -30,6 +30,7 @@ contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, Reentrancy
     error Lottery__LotteryIsFull();
     error Lottery__TransferFailed();
     error Lottery__LotteryNotOpen();
+    error Lottery__NoFeeToWithdraw();
     error Lottery__NoPrizeToWithdraw();
     error Lottery__PlayerAlreadyEntered();
     error Lottery__SendMoreToEnterLottery();
@@ -190,9 +191,8 @@ contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, Reentrancy
         if (totalEntries > MAX_ENTRIES_PER_PLAYER) {
             revert Lottery__MoreThenFiveEntriesNotAllowed();
         }
-        uint256 ethToReturn = totalEthSent % minimumEthAmount;
 
-        // Implement a fee feature
+        uint256 ethToReturn = totalEthSent % minimumEthAmount;
         s_players.push(payable(msg.sender));
         s_totalEthValue += (minimumEthAmount * totalEntries);
         s_ethValueOfCurrentRound += (minimumEthAmount * totalEntries);
@@ -239,85 +239,12 @@ contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, Reentrancy
     }
 
     /**
-     * @notice Convert the configured minimum USD fee to its ETH equivalent using the price feed.
-     * @dev Uses `OracleLib.staleCheckLatestRoundData()` which may revert/handle stale feed logic.
-     * @return ethAmount ETH amount in wei that corresponds to `i_minimumEntranceFeeInUSD`.
-     */
-    function getMinimumEthAmountToEnter() public view returns (uint256 ethAmount) {
-        (, int256 price,,,) = i_priceFeed.staleCheckLatestRoundData();
-        ethAmount = i_minimumEntranceFeeInUSD * PRECISION / uint256(price);
-    }
-
-    /**
      * @notice Get the prize value of the current round.
      * @return Prize value in wei.
      */
     function getPrizeValueOfCurrentRound() external view returns (uint256) {
         uint256 fee = s_ethValueOfCurrentRound * PROTOCOL_FEE_PERCENTAGE / PRECISION;
         return s_ethValueOfCurrentRound - fee;
-    }
-
-    /**
-     * @notice Check whether upkeep is needed for Chainlink Automation.
-     * @dev Conditions:
-     *       1) Enough time passed since last run.
-     *       2) Lottery is OPEN.
-     *       3) Players are present.
-     *       4) Contract has ETH and players are present.
-     * @return upkeepNeeded True if upkeep should be performed.
-     * @return performData Currently unused and always returns an empty bytes ("0x0").
-     */
-    function checkUpkeep(bytes memory /* checkData */ )
-        public
-        view
-        override
-        returns (bool upkeepNeeded, bytes memory /* performData */ )
-    {
-        bool isOpen = LotteryState.OPEN == s_lotteryState;
-        bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
-        bool hasPlayers = s_players.length > 0;
-        bool hasBalance = address(this).balance > 0;
-        upkeepNeeded = (timePassed && isOpen && hasBalance && hasPlayers);
-        return (upkeepNeeded, "0x0");
-    }
-
-    /**
-     * @notice Callback used by Chainlink VRF to deliver randomness and settle the lottery.
-     * @dev Picks a winner proportional to entries, charges protocol fee, and resets round state.
-     *      Internal function called by VRFCoordinator.
-     * @param , Unused requestId parameter as its not mapped to requests.
-     * @param randomWords Array of random words returned by VRF (only index 0 is used).
-     *
-     * Emits {WinnerPicked}.
-     */
-    function fulfillRandomWords(uint256, /* requestId */ uint256[] memory randomWords) internal override {
-        address payable[] memory m_players = s_players;
-        uint256 winningTicket = randomWords[0] % s_totalEntriesCurrentRound;
-        uint256 cumulative = 0;
-        for (uint256 i = 0; i < m_players.length;) {
-            cumulative += s_entriesPerRoundPerPlayer[s_currentRoundId][m_players[i]];
-            if (winningTicket < cumulative) {
-                s_recentWinner = m_players[i];
-                break;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-        uint256 fee = s_ethValueOfCurrentRound * PROTOCOL_FEE_PERCENTAGE / PRECISION;
-        s_totalFeeCollected += fee;
-        s_winnersPrize[s_recentWinner] += (s_ethValueOfCurrentRound - fee);
-
-        // Reset state
-        s_players = new address payable[](0);
-        s_currentRoundId++;
-        s_numberOfPlayersInARound = 0;
-        s_lotteryState = LotteryState.OPEN;
-        s_lastTimeStamp = block.timestamp;
-        s_ethValueOfCurrentRound = 0;
-        s_totalEntriesCurrentRound = 0;
-
-        emit WinnerPicked(s_recentWinner);
     }
 
     /**
@@ -385,6 +312,9 @@ contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, Reentrancy
      * Emits {FeeWithdrawn}.
      */
     function withdrawProtocolFee() external nonReentrant onlyOwner {
+        if (s_totalFeeCollected == 0) {
+            revert Lottery__NoFeeToWithdraw();
+        }
         uint256 fee = s_totalFeeCollected;
         s_totalFeeCollected = 0;
         s_totalEthValue -= fee;
@@ -393,6 +323,79 @@ contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, Reentrancy
         if (!success) {
             revert Lottery__TransferFailed();
         }
+    }
+
+    /**
+     * @notice Convert the configured minimum USD fee to its ETH equivalent using the price feed.
+     * @dev Uses `OracleLib.staleCheckLatestRoundData()` which may revert/handle stale feed logic.
+     * @return ethAmount ETH amount in wei that corresponds to `i_minimumEntranceFeeInUSD`.
+     */
+    function getMinimumEthAmountToEnter() public view returns (uint256 ethAmount) {
+        (, int256 price,,,) = i_priceFeed.staleCheckLatestRoundData();
+        ethAmount = i_minimumEntranceFeeInUSD * PRECISION / uint256(price);
+    }
+
+    /**
+     * @notice Check whether upkeep is needed for Chainlink Automation.
+     * @dev Conditions:
+     *       1) Enough time passed since last run.
+     *       2) Lottery is OPEN.
+     *       3) Players are present.
+     *       4) Contract has ETH and players are present.
+     * @return upkeepNeeded True if upkeep should be performed.
+     * @return performData Currently unused and always returns an empty bytes ("0x0").
+     */
+    function checkUpkeep(bytes memory /* checkData */ )
+        public
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory /* performData */ )
+    {
+        bool isOpen = LotteryState.OPEN == s_lotteryState;
+        bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
+        bool hasPlayers = s_players.length > 0;
+        bool hasBalance = address(this).balance > 0;
+        upkeepNeeded = (timePassed && isOpen && hasBalance && hasPlayers);
+        return (upkeepNeeded, "0x0");
+    }
+
+    /**
+     * @notice Callback used by Chainlink VRF to deliver randomness and settle the lottery.
+     * @dev Picks a winner proportional to entries, charges protocol fee, and resets round state.
+     *      Internal function called by VRFCoordinator.
+     * @param , Unused requestId parameter as its not mapped to requests.
+     * @param randomWords Array of random words returned by VRF (only index 0 is used).
+     *
+     * Emits {WinnerPicked}.
+     */
+    function fulfillRandomWords(uint256, /* requestId */ uint256[] memory randomWords) internal override {
+        address payable[] memory m_players = s_players;
+        uint256 winningTicket = randomWords[0] % s_totalEntriesCurrentRound;
+        uint256 cumulative = 0;
+        for (uint256 i = 0; i < m_players.length;) {
+            cumulative += s_entriesPerRoundPerPlayer[s_currentRoundId][m_players[i]];
+            if (winningTicket < cumulative) {
+                s_recentWinner = m_players[i];
+                break;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        uint256 fee = s_ethValueOfCurrentRound * PROTOCOL_FEE_PERCENTAGE / PRECISION;
+        s_totalFeeCollected += fee;
+        s_winnersPrize[s_recentWinner] += (s_ethValueOfCurrentRound - fee);
+
+        // Reset state
+        s_players = new address payable[](0);
+        s_currentRoundId++;
+        s_numberOfPlayersInARound = 0;
+        s_lotteryState = LotteryState.OPEN;
+        s_lastTimeStamp = block.timestamp;
+        s_ethValueOfCurrentRound = 0;
+        s_totalEntriesCurrentRound = 0;
+
+        emit WinnerPicked(s_recentWinner);
     }
 
     /**
@@ -602,5 +605,13 @@ contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, Reentrancy
      */
     function getWinnerPrize(address player) external view returns (uint256) {
         return s_winnersPrize[player];
+    }
+
+    /**
+     * @notice Returns the total number of entries in the current round.
+     * @dev Value is in wei and resets at the start of a new round.
+     */
+    function getTotalEntriesCurrentRound() external view returns (uint256) {
+        return s_totalEntriesCurrentRound;
     }
 }

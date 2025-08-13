@@ -220,7 +220,7 @@ contract LotteryUnitTest is StdCheats, Test {
     // withdraw            //
     /////////////////////////
 
-    function testWithdrawPrizeToAnAddressFlow() public lotteryEntered skipFork {
+    function testWithdrawPrizeToAnAddressFlowAndRevertPaths() public lotteryEntered skipFork {
         // Arrange: add additional entrants so there is a prize and fee
         // add more entrants to increase pool
         for (uint256 i = 2; i < 5; i++) {
@@ -259,10 +259,20 @@ contract LotteryUnitTest is StdCheats, Test {
         lottery.setWithdrawPrizeToAnAddressEnabled(true);
         assert(lottery.getWithdrawPrizeToAnAddressState() == true);
 
+        // Should revert if transfer fails
+        vm.prank(recentWinner);
+        vm.expectRevert(Lottery.Lottery__TransferFailed.selector);
+        lottery.withdrawPrizeToAnAddress(address(playerIsAContract));
+
         // Withdraw to zero address should revert
         vm.prank(recentWinner);
         vm.expectRevert(Lottery.Lottery__TransferNotAllowedToZeroAddress.selector);
         lottery.withdrawPrizeToAnAddress(address(0));
+
+        // Should revert if caller has no prize
+        vm.prank(PLAYER);
+        vm.expectRevert(Lottery.Lottery__NoPrizeToWithdraw.selector);
+        lottery.withdrawPrizeToAnAddress(PLAYER);
 
         // Withdraw to a different receiver should succeed and disable the flag
         address receiver = makeAddr("receiver");
@@ -274,7 +284,7 @@ contract LotteryUnitTest is StdCheats, Test {
         assert(receiver.balance == receiverStarting + prize);
     }
 
-    function testWithdrawProtocolFeeOnlyOwnerAndResetsCollectedFee() public lotteryEntered skipFork {
+    function testWithdrawProtocolFeeOnlyOwnerAndResetsCollectedFeeAndRevetPaths() public lotteryEntered skipFork {
         // Arrange: create a small pool, perform upkeep and fulfill to collect fee
         // Add an extra entrant so totalEntries > 0
         address extra = address(uint160(1234));
@@ -287,6 +297,14 @@ contract LotteryUnitTest is StdCheats, Test {
         lottery.performUpkeep("");
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bytes32 requestId = entries[1].topics[1];
+
+        // owner withdraws and fee resets
+        (,,,,,,, uint256 deployerKey,) = helperConfig.activeNetworkConfig();
+        address owner = vm.addr(deployerKey);
+        vm.prank(owner);
+        vm.expectRevert(Lottery.Lottery__NoFeeToWithdraw.selector);
+        lottery.withdrawProtocolFee();
+
         VRFCoordinatorV2Mock(vrfCoordinatorV2).fulfillRandomWords(uint256(requestId), address(lottery));
 
         // compute expected fee (read from contract state)
@@ -297,10 +315,6 @@ contract LotteryUnitTest is StdCheats, Test {
         vm.prank(PLAYER);
         vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
         lottery.withdrawProtocolFee();
-
-        // owner withdraws and fee resets
-        (,,,,,,, uint256 deployerKey,) = helperConfig.activeNetworkConfig();
-        address owner = vm.addr(deployerKey);
 
         uint256 ownerStarting = owner.balance;
         vm.prank(owner);
@@ -670,5 +684,9 @@ contract LotteryUnitTest is StdCheats, Test {
 
     function testGetTimeOutLimit() public view {
         assert(lottery.getTimeOutLimit() == 3 hours);
+    }
+
+    function testgetNumberOfPlayersInCurrentRound() public lotteryEntered {
+        assert(lottery.getNumberOfPlayersInCurrentRound() == 1);
     }
 }

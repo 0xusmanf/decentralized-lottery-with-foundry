@@ -10,7 +10,6 @@ out/
 # Docs
 docs/
 coverage/
-test/Invariant/
 
 # Dotenv file
 .env
