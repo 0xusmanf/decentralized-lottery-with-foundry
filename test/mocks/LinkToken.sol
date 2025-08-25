@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 // @dev This contract has been adapted to fit with dappTools
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
 import "@solmate/tokens/ERC20.sol";
 

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {VRFCoordinatorV2Interface} from "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import {VRFConsumerBaseV2} from "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
@@ -24,7 +24,7 @@ import {OracleLib} from "./libraries/OracleLib.sol";
  *
  *      The contract uses `Ownable` for protocol fee withdrawal by the owner.
  */
-contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, ReentrancyGuard, Ownable {
+contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, ReentrancyGuard, Ownable2Step {
     /* Errors */
 
     error Lottery__LotteryIsFull();
@@ -143,7 +143,7 @@ contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, Reentrancy
         uint32 callbackGasLimit,
         address vrfCoordinatorV2,
         address priceFeed
-    ) VRFConsumerBaseV2(vrfCoordinatorV2) Ownable(msg.sender) {
+    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
         i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
         i_priceFeed = AggregatorV3Interface(priceFeed);
         i_gasLane = gasLane;

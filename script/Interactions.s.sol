@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
 import {Script, console} from "forge-std/Script.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
@@ -70,7 +70,7 @@ contract FundSubscription is Script {
      */
     function testExclude() public {}
 
-    uint96 public constant FUND_AMOUNT = 3 ether;
+    uint96 public constant FUND_AMOUNT = 1_000_000 ether;
 
     function fundSubscriptionUsingConfig() public {
         HelperConfig helperConfig = new HelperConfig();

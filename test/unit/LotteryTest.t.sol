@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
 import {DeployLottery} from "../../script/DeployLottery.s.sol";
 import {Lottery} from "../../src/Lottery.sol";
@@ -251,7 +251,7 @@ contract LotteryUnitTest is StdCheats, Test {
 
         // Non-owner enabling should revert (sanity)
         vm.prank(PLAYER); // random non-owner
-        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vm.expectRevert("Ownable: caller is not the owner");
         lottery.setWithdrawPrizeToAnAddressEnabled(true);
 
         // Owner enables flag
@@ -313,7 +313,7 @@ contract LotteryUnitTest is StdCheats, Test {
 
         // non-owner cannot call withdrawProtocolFee
         vm.prank(PLAYER);
-        vm.expectPartialRevert(Ownable.OwnableUnauthorizedAccount.selector);
+        vm.expectRevert("Ownable: caller is not the owner");
         lottery.withdrawProtocolFee();
 
         uint256 ownerStarting = owner.balance;

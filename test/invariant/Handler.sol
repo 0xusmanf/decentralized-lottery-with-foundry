@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.20;
+pragma solidity 0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
 import {Lottery} from "../../src/Lottery.sol";
@@ -17,13 +17,15 @@ contract Handler is Test {
     mapping(uint256 => uint256) public roundPot; // roundId => total ETH
     mapping(address => uint256) public totalEthContributed;
     mapping(address => uint256) public totalEntries; // across all rounds
+    mapping(address => bool) public hasEntered;
 
-    uint256 public constant MAX_PLAYERS = 20;
+    uint256 public constant MAX_PLAYERS = 50;
     uint256 public constant STARTING_BALANCE = 10 ether;
 
     uint256 public lastRequestId;
     uint256 public lastRoundWithWinner;
     address public lastWinner;
+    address[] public winners;
 
     constructor(Lottery _lottery, address _vrfCoordinator, address _priceFeed) {
         lottery = _lottery;
@@ -39,6 +41,8 @@ contract Handler is Test {
 
         address player = _makeAddr(seed);
 
+        vm.assume(!hasEntered[player]);
+
         if (player.balance == 0) {
             vm.deal(player, STARTING_BALANCE);
         }
@@ -48,17 +52,15 @@ contract Handler is Test {
         uint256 entries = value / minFee;
 
         vm.prank(player);
-        try lottery.enterLottery{value: value}() {
-            roundPlayers[currentRound].push(player);
-            roundPot[currentRound] += (entries * minFee);
-            totalEthContributed[player] += value;
+        lottery.enterLottery{value: value}();
+        roundPlayers[currentRound].push(player);
+        roundPot[currentRound] += (entries * minFee);
+        totalEthContributed[player] += value;
 
-            // Track entries from contract directly (assume 1 entry per minFee paid)
-            uint256 entriesBought = value / minFee;
-            totalEntries[player] += entriesBought;
-        } catch {
-            // ignore reverts
-        }
+        // Track entries from contract directly (assume 1 entry per minFee paid)
+        uint256 entriesBought = value / minFee;
+        totalEntries[player] += entriesBought;
+        hasEntered[player] = true;
     }
 
     function warpForward(uint256 secondsForward, int256 ethPrice) public {
@@ -72,42 +74,28 @@ contract Handler is Test {
     function performUpkeep() public {
         (bool upkeepNeeded,) = lottery.checkUpkeep("");
         if (upkeepNeeded) {
-            try lottery.performUpkeep("") {
-                lastRequestId = _lastRequestId();
-            } catch {}
-        }
-    }
-
-    function fulfillRandomness(uint256 /*seed*/ ) public {
-        if (lastRequestId > 0) {
-            try vrfCoordinator.fulfillRandomWords(lastRequestId, address(lottery)) {
+            vm.recordLogs();
+            lottery.performUpkeep("");
+            lastRequestId = _lastRequestId();
+            if (lastRequestId > 0) {
+                vrfCoordinator.fulfillRandomWords(lastRequestId, address(lottery));
                 lastWinner = lottery.getRecentWinner();
+                winners.push(lastWinner);
                 lastRoundWithWinner = lottery.getCurrentRoundId() - 1;
                 lastRequestId = 0;
-
-                // After payout, pot should reset
-                roundPot[lottery.getCurrentRoundId()] = 0;
-            } catch {}
+            }
         }
     }
 
     function withdraw(uint256 seed) public {
-        address player = _makeAddr(seed);
-        uint256 beforeBal = player.balance;
-        uint256 currentRound = lottery.getCurrentRoundId();
-        roundPot[currentRound] -= lottery.getWinnerPrize(player);
+        if (winners.length == 0) return;
+        uint256 winnerIndex = seed % winners.length;
+        address winner = winners[winnerIndex];
 
-        vm.startPrank(player);
-        try lottery.withdrawPrize() {
-            uint256 afterBal = player.balance;
-            if (afterBal > beforeBal) {
-                // Player successfully withdrew winnings
-                // No special tracking needed, since pot and contract balance invariants will catch inconsistencies
-            }
-        } catch {
-            // ignore failed withdrawals
-        }
-        vm.stopPrank();
+        vm.prank(winner);
+        lottery.withdrawPrize();
+        winners[winnerIndex] = winners[winners.length - 1];
+        winners.pop();
     }
 
     // === HELPERS ===
@@ -117,11 +105,8 @@ contract Handler is Test {
 
     function _lastRequestId() internal returns (uint256) {
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics.length > 1) {
-                return uint256(logs[i].topics[1]);
-            }
-        }
-        return 0;
+        bytes32 requestId = logs[1].topics[1];
+
+        return uint256(requestId);
     }
 }
