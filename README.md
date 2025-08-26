@@ -83,7 +83,7 @@ The lottery runs in **rounds** managed by a simple state machine:
   - Unit testing
   - Fuzz testing
   - Intigration testing
-  - Invariant testing (In progress)
+  - Invariant testing
 
 ## Getting Started
 
