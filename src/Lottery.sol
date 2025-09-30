@@ -38,7 +38,7 @@ contract Lottery is VRFConsumerBaseV2, AutomationCompatibleInterface, Reentrancy
     error Lottery__WithdrawToAnAddressNotEnabled();
     error Lottery__MoreThenFiveEntriesNotAllowed();
     error Lottery__TransferNotAllowedToZeroAddress();
-    error Lottery__UpkeepNotNeeded(uint256 currentBalance, uint256 numPlayers, uint256 LotteryState);
+    error Lottery__UpkeepNotNeeded(uint256 currentBalance, uint256 numPlayers, uint256 lotteryState);
 
     /* TYPE DECLARATIONS */
     enum LotteryState {

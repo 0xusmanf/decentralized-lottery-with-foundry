@@ -21,3 +21,6 @@ sepolia = "${SEPOLIA_RPC_URL}"
 
 [invariant]
 fail_on_revert = true
+
+[lint]
+lint_on_build = false
